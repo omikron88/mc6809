@@ -629,9 +629,358 @@ def validate() -> None:
         assert all(alias == alias.upper() for alias in item.aliases), item
 
 
+def disassemble_one(read8, address: int, hd6309: bool = False):
+    """
+    Disasembluje jednu instrukci 6809, nebo HD6309 při hd6309=True.
+
+    read8(adresa) vrací bajt paměti; adresy se přetáčejí na 16 bitech.
+    Režim HD6309 zahrnuje instrukce dostupné v emulačním i nativním režimu.
+    Neznámý nebo pro zvolený CPU nedostupný opcode vrací jako FCB
+    (případný prefix je součástí FCB, operand se již nečte).
+
+    Vrací:
+        (address, raw_bytes, mnemonic, operand, next_address)
+    """
+
+    REG_INDEX = ("X", "Y", "U", "S")
+
+    REG_PAIR = {
+        0x0: "D",
+        0x1: "X",
+        0x2: "Y",
+        0x3: "U",
+        0x4: "S",
+        0x5: "PC",
+        0x8: "A",
+        0x9: "B",
+        0xA: "CC",
+        0xB: "DP",
+    }
+
+    if hd6309:
+        REG_PAIR.update({code: name for name, code in INTER_REGISTER_CODES.items()})
+        REG_PAIR[0xD] = "0"  # Druhé kódování nulového registru HD6309.
+
+    def s8(x):
+        return x - 0x100 if x & 0x80 else x
+
+    def s16(x):
+        return x - 0x10000 if x & 0x8000 else x
+
+    def hex16(x):
+        return f"${x & 0xffff:04X}"
+
+    def decode_indexed(read8, pc):
+        """
+        pc ukazuje na indexed postbyte.
+
+        Vrací:
+            (text_operandu, adresa_za_operandem)
+        """
+
+        pb = read8(pc)
+        pc = (pc + 1) & 0xffff
+
+        reg = REG_INDEX[(pb >> 5) & 3]
+
+        # 5bit offset: 0RRnnnnn
+        if not (pb & 0x80):
+            n = pb & 0x1f
+
+            if n & 0x10:
+                n -= 0x20
+
+            if n == 0:
+                return f",{reg}", pc
+
+            return f"{n},{reg}", pc
+
+        # W jako základ má samostatná kódování, nikoli pole RR.
+        if hd6309:
+            w_forms = {
+                0x8F: ",W", 0x90: "[,W]",
+                0xCF: ",W++", 0xD0: "[,W++]",
+                0xEF: ",--W", 0xF0: "[,--W]",
+            }
+            if pb in w_forms:
+                return w_forms[pb], pc
+            if pb in (0xAF, 0xB0):
+                n = (read8(pc) << 8) | read8((pc + 1) & 0xffff)
+                pc = (pc + 2) & 0xffff
+                text = f"{s16(n)},W"
+                return (f"[{text}]" if pb == 0xB0 else text), pc
+
+        indirect = bool(pb & 0x10)
+        mode = pb & 0x0f
+
+        if indirect and mode in (0x0, 0x2):
+            return f"<illegal indexed ${pb:02X}>", pc
+
+        if mode == 0x0:
+            text = f",{reg}+"
+
+        elif mode == 0x1:
+            text = f",{reg}++"
+
+        elif mode == 0x2:
+            text = f",-{reg}"
+
+        elif mode == 0x3:
+            text = f",--{reg}"
+
+        elif mode == 0x4:
+            text = f",{reg}"
+
+        elif mode == 0x5:
+            text = f"B,{reg}"
+
+        elif mode == 0x6:
+            text = f"A,{reg}"
+
+        elif hd6309 and mode in (0x7, 0xA, 0xE):
+            acc = {0x7: "E", 0xA: "F", 0xE: "W"}[mode]
+            text = f"{acc},{reg}"
+
+        elif mode == 0x8:
+            n = s8(read8(pc))
+            pc = (pc + 1) & 0xffff
+            text = f"{n},{reg}"
+
+        elif mode == 0x9:
+            n = (read8(pc) << 8) | read8((pc + 1) & 0xffff)
+            pc = (pc + 2) & 0xffff
+            text = f"{s16(n)},{reg}"
+
+        elif mode == 0xB:
+            text = f"D,{reg}"
+
+        elif mode == 0xC:
+            n = s8(read8(pc))
+            pc = (pc + 1) & 0xffff
+
+            # PC je v tuto chvíli adresa ZA celou instrukcí
+            target = (pc + n) & 0xffff
+            text = f"{hex16(target)},PCR"
+
+        elif mode == 0xD:
+            n = (read8(pc) << 8) | read8((pc + 1) & 0xffff)
+            pc = (pc + 2) & 0xffff
+
+            target = (pc + s16(n)) & 0xffff
+            text = f"{hex16(target)},PCR"
+
+        elif pb == 0x9F:
+            addr = (read8(pc) << 8) | read8((pc + 1) & 0xffff)
+            pc = (pc + 2) & 0xffff
+
+            # Tento režim je vždy indirect.
+            return f"[{hex16(addr)}]", pc
+
+        else:
+            return f"<illegal indexed ${pb:02X}>", pc
+
+        if indirect:
+            text = "[" + text + "]"
+
+        return text, pc
+
+    start = address & 0xffff
+    pc = start
+
+    # ------------------------------------------------------------
+    # opcode
+    # ------------------------------------------------------------
+
+    op1 = read8(pc)
+    pc = (pc + 1) & 0xffff
+
+    if op1 in (0x10, 0x11):
+        op2 = read8(pc)
+        pc = (pc + 1) & 0xffff
+        opcode = bytes((op1, op2))
+    else:
+        opcode = bytes((op1,))
+
+    candidates = BY_OPCODE.get(opcode, ())
+    ins = next((x for x in candidates if hd6309 or not x.only_6309), None)
+
+    if ins is None:
+        raw = bytes(read8((start + i) & 0xffff)
+                    for i in range((pc - start) & 0xffff))
+
+        return start, raw, "FCB", ",".join(f"${b:02X}" for b in raw), pc
+
+    operand = ""
+
+    typ = ins.operand
+
+    # ------------------------------------------------------------
+    # operand
+    # ------------------------------------------------------------
+
+    if typ == OperandType.NONE:
+        pass
+
+    elif typ == OperandType.IMM8:
+        value = read8(pc)
+        pc = (pc + 1) & 0xffff
+        operand = f"#${value:02X}"
+
+    elif typ == OperandType.IMM16:
+        value = (
+            (read8(pc) << 8) |
+            read8((pc + 1) & 0xffff)
+        )
+        pc = (pc + 2) & 0xffff
+        operand = f"#${value:04X}"
+
+    elif typ == OperandType.IMM32:
+        value = 0
+        for _ in range(4):
+            value = (value << 8) | read8(pc)
+            pc = (pc + 1) & 0xffff
+        operand = f"#${value:08X}"
+
+    elif typ in (OperandType.IMM8_DIRECT, OperandType.IMM8_INDEXED,
+                 OperandType.IMM8_EXTENDED):
+        mask = read8(pc)
+        pc = (pc + 1) & 0xffff
+        if typ == OperandType.IMM8_INDEXED:
+            target, pc = decode_indexed(read8, pc)
+        elif typ == OperandType.IMM8_DIRECT:
+            target = f"${read8(pc):02X}"
+            pc = (pc + 1) & 0xffff
+        else:
+            value = (read8(pc) << 8) | read8((pc + 1) & 0xffff)
+            pc = (pc + 2) & 0xffff
+            target = hex16(value)
+        operand = f"#${mask:02X},{target}"
+
+    elif typ == OperandType.TFM_REG_PAIR:
+        pb = read8(pc)
+        pc = (pc + 1) & 0xffff
+        tfm_regs = {0: "D", 1: "X", 2: "Y", 3: "U", 4: "S"}
+        src = tfm_regs.get(pb >> 4)
+        dst = tfm_regs.get(pb & 0x0f)
+        if src is None or dst is None:
+            operand = f"<illegal TFM ${pb:02X}>"
+        else:
+            src_suffix, dst_suffix = {
+                0x38: ("+", "+"), 0x39: ("-", "-"),
+                0x3A: ("+", ""), 0x3B: ("", "+"),
+            }[opcode[-1]]
+            operand = f"{src}{src_suffix},{dst}{dst_suffix}"
+
+    elif typ == OperandType.BIT_TRANSFER:
+        pb = read8(pc)
+        value = read8((pc + 1) & 0xffff)
+        pc = (pc + 2) & 0xffff
+        reg = {code: name for name, code in BIT_TARGET_CODES.items()}.get(pb >> 6)
+        if reg is None:
+            operand = f"<illegal bit transfer ${pb:02X}>,${value:02X}"
+        else:
+            operand = f"{reg},{(pb >> 3) & 7},{pb & 7},${value:02X}"
+
+    elif typ == OperandType.DIRECT:
+        value = read8(pc)
+        pc = (pc + 1) & 0xffff
+        operand = f"${value:02X}"
+
+    elif typ == OperandType.EXTENDED:
+        value = (
+            (read8(pc) << 8) |
+            read8((pc + 1) & 0xffff)
+        )
+        pc = (pc + 2) & 0xffff
+        operand = f"${value:04X}"
+
+    elif typ == OperandType.REL8:
+        offset = s8(read8(pc))
+        pc = (pc + 1) & 0xffff
+
+        target = (pc + offset) & 0xffff
+        operand = f"${target:04X}"
+
+    elif typ == OperandType.REL16:
+        value = (
+            (read8(pc) << 8) |
+            read8((pc + 1) & 0xffff)
+        )
+        pc = (pc + 2) & 0xffff
+
+        target = (pc + s16(value)) & 0xffff
+        operand = f"${target:04X}"
+
+    elif typ == OperandType.INDEXED:
+        operand, pc = decode_indexed(read8, pc)
+
+    elif typ == OperandType.REG_PAIR:
+        pb = read8(pc)
+        pc = (pc + 1) & 0xffff
+
+        src = REG_PAIR.get(pb >> 4, "?")
+        dst = REG_PAIR.get(pb & 0x0f, "?")
+
+        operand = f"{src},{dst}"
+
+    elif typ == OperandType.REG_LIST:
+        pb = read8(pc)
+        pc = (pc + 1) & 0xffff
+
+        regs = []
+
+        if pb & 0x01:
+            regs.append("CC")
+        if pb & 0x02:
+            regs.append("A")
+        if pb & 0x04:
+            regs.append("B")
+        if pb & 0x08:
+            regs.append("DP")
+        if pb & 0x10:
+            regs.append("X")
+        if pb & 0x20:
+            regs.append("Y")
+
+        if pb & 0x40:
+            if ins.mnemonic in ("PSHS", "PULS"):
+                regs.append("U")
+            else:
+                regs.append("S")
+
+        if pb & 0x80:
+            regs.append("PC")
+
+        operand = ",".join(regs)
+
+    else:
+        operand = "<unsupported>"
+
+    # ------------------------------------------------------------
+    # raw bytes
+    # ------------------------------------------------------------
+
+    length = (pc - start) & 0xffff
+
+    raw = bytes(
+        read8((start + i) & 0xffff)
+        for i in range(length)
+    )
+
+    return start, raw, ins.mnemonic, operand, pc
+
+def format_line(d):
+    raw = " ".join(f"{b:02X}" for b in d[1])
+
+    return (
+        f"{d[0]:04X}  "
+        f"{raw:<14}  "
+        f"{d[2]:<6}"
+        f"{d[3]}"
+    )
+
+
 validate()
-
-
 if __name__ == "__main__":
     n_6809 = sum(not item.only_6309 for item in INSTRUCTIONS)
     n_6309_only = sum(item.only_6309 for item in INSTRUCTIONS)

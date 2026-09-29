@@ -58,7 +58,6 @@ Install for development and run tests:
 
 ```sh
 python -m pip install -e .
-python -m unittest discover -s tests -v
 ```
 
 
@@ -72,9 +71,9 @@ z `ins6809.py`. Výchozí cílový procesor je Hitachi 6309; přepínačem `--cp
 ## Použití
 
 ```sh
-python3 assembler.py program.asm -o program.bin
-python3 assembler.py program.asm -o program.hex --format hex --cpu 6809
-python3 assembler.py program.asm -o oblast.bin --trim --fill 0xff
+python3 asm6809.py program.asm -o program.bin
+python3 asm6809.py program.asm -o program.hex --format hex --cpu 6809
+python3 asm6809.py program.asm -o oblast.bin --trim --fill 0xff
 ```
 
 Binární výstup má standardně přesně 65536 bajtů a mezery vyplňuje hodnotou z
