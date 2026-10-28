@@ -114,3 +114,10 @@ vektor: dw start
 Při automatické volbě se adresa `$00..$FF` zakóduje jako direct, ostatní jako
 extended. U dopředného odkazu proběhne opakované ustálení rozložení; tam, kde
 má mít symbol záměrně direct režim, je přesto nejčitelnější použít `<symbol`.
+
+## Z80 a Intel 8080
+
+Nový balíček [`z80`](Z80.md) obsahuje emulátor Z80 s pamětí a porty přes
+callbacky, úplný katalog dokumentovaných instrukcí, assembler a disassembler.
+Příznak `Instruction.is_i8080` označuje instrukce sdílející dokumentované
+kódování s Intel 8080; assembler nabízí přepínač `--i8080-only`.
