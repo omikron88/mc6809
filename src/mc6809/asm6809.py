@@ -14,10 +14,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
-from ins6809 import (
-    AddrMode, BIT_TARGET_CODES, BY_MNEMONIC, INTER_REGISTER_CODES,
-    INTER_REGISTERS_6309_ONLY, Instruction, OperandType,
-)
+if __package__:
+    from .ins6809 import (
+        AddrMode, BIT_TARGET_CODES, BY_MNEMONIC, INTER_REGISTER_CODES,
+        INTER_REGISTERS_6309_ONLY, Instruction, OperandType,
+    )
+else:  # Preserve direct execution of asm6809.py.
+    from ins6809 import (
+        AddrMode, BIT_TARGET_CODES, BY_MNEMONIC, INTER_REGISTER_CODES,
+        INTER_REGISTERS_6309_ONLY, Instruction, OperandType,
+    )
+
 
 
 class AssemblyError(Exception):
