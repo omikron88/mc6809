@@ -62,9 +62,13 @@ for name, hi, lo in [
 
 
 class Z80:
-    def __init__(self, read, write, *, input_port=None, output_port=None):
+    def __init__(
+        self, read, write, *, fetch=None, intack=None, input_port=None, output_port=None
+    ):
         self.read = read
         self.write = write
+        self.fetch = read if fetch is None else fetch
+        self.intack = (lambda: self._bus) if intack is None else intack
         self.input_port = input_port or (lambda port: 255)
         self.output_port = output_port or (lambda port, value: None)
         self.reset()
@@ -107,7 +111,9 @@ class Z80:
 
     def _m1(self):
         self.r.r = (self.r.r & 128) | ((self.r.r + 1) & 127)
-        return self._fetch()
+        v = self.fetch(self.r.pc & 65535) & 255
+        self.r.pc = (self.r.pc + 1) & 65535
+        return v
 
     def _imm16(self):
         return self._fetch() | self._fetch() << 8
@@ -548,6 +554,7 @@ class Z80:
             self.iff2 = self.iff1
             self.iff1 = False
             r.r = (r.r & 128) | ((r.r + 1) & 127)
+            self.fetch(r.pc & 65535)
             self._push(r.pc)
             r.pc = 0x66
             t = 11
@@ -555,13 +562,15 @@ class Z80:
             self.halted = False
             self.iff1 = self.iff2 = False
             r.r = (r.r & 128) | ((r.r + 1) & 127)
+            bus = self.intack() & 255
             if self.im == 0:
-                t = self._execute(self._bus) + 2
+                t = self._execute(bus) + 2
             else:
                 self._push(r.pc)
-                r.pc = self._word((r.i << 8) | self._bus) if self.im == 2 else 0x38
+                r.pc = self._word((r.i << 8) | bus) if self.im == 2 else 0x38
                 t = 19 if self.im == 2 else 13
         elif self.halted:
+            self.fetch(r.pc & 65535)
             r.r = (r.r & 128) | ((r.r + 1) & 127)
             t = 4
         else:
