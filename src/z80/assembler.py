@@ -319,7 +319,7 @@ class Assembler:
         return AssemblyResult(memory, used, symbols)
 
 
-def main():
+def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="Z80 assembler (Zilog syntax)")
     p.add_argument("source", type=Path)
     p.add_argument("-o", "--output", required=True, type=Path)
@@ -327,7 +327,7 @@ def main():
     p.add_argument("--undocumented", action="store_true")
     p.add_argument("--trim", action="store_true")
     p.add_argument("--format", choices=["bin", "hex"], default="bin")
-    args = p.parse_args()
+    args = p.parse_args(argv)
     try:
         result = Assembler(
             i8080_only=args.i8080_only, allow_undocumented=args.undocumented
@@ -338,7 +338,8 @@ def main():
             args.output.write_bytes(result.binary(not args.trim))
     except (AssemblyError, OSError) as exc:
         p.exit(1, str(exc) + "\n")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
