@@ -1,2 +1,15 @@
 __pycache__/
 *.py[cod]
+
+.venv/
+venv/
+build/
+dist/
+*.egg-info/
+*.log
+*.rom
+*.img
+*.ram
+*.bin
+*-rtc.json
+*.tmp

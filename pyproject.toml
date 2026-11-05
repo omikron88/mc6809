@@ -12,6 +12,9 @@ license = {text = "GPL3"}
 authors = [{name = "omikron"}]
 classifiers = ["Programming Language :: Python :: 3"]
 
+[project.scripts]
+zeta2 = "zeta2.__main__:main"
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 

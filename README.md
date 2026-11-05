@@ -269,3 +269,22 @@ python -m z80 program.asm -o program.bin --undocumented
 `disassemble_one(read8, address)` vrací `Decoded` s původní adresou,
 spotřebovanými bajty, metadaty instrukce, textem operandů a následující
 adresou. `format_line()` připraví řádek výpisu.
+
+
+## Zeta SBC V2 a terminál VT100
+
+Balíček `zeta2` emuluje základní desku Zeta2 bez ParPortProp: MMU, ROM/RAM,
+UART 16550, CTC, PPI, RTC a disketový řadič. Používá zdejší jádro Z80.
+Grafický terminál VT100 připojený k UART vyžaduje Tkinter a grafické prostředí.
+
+```sh
+python -m pip install -e .
+python -m zeta2 --demo --vt100
+python -m zeta2 --rom ZETA2_noppp.rom --vt100
+python -m unittest discover -s tests -v
+```
+
+Bez `--vt100` se používá konzole; pro automatický běh lze zvolit
+`python -m zeta2 --demo --headless --cycles 100000`. Po instalaci je dostupný
+i příkaz `zeta2`. Podrobný návod, firmware a omezení emulace popisuje
+[ZETA2.md](ZETA2.md). Start RomWBW/CP/M zatím nebyl ověřen.
