@@ -14,6 +14,10 @@ classifiers = ["Programming Language :: Python :: 3"]
 
 [project.scripts]
 zeta2 = "zeta2.__main__:main"
+zxspectrum = "zxspectrum.__main__:main"
+
+[project.optional-dependencies]
+spectrum = ["pygame>=2.5,<3"]
 
 [tool.setuptools]
 package-dir = {"" = "src"}

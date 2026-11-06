@@ -288,3 +288,21 @@ Bez `--vt100` se používá konzole; pro automatický běh lze zvolit
 `python -m zeta2 --demo --headless --cycles 100000`. Po instalaci je dostupný
 i příkaz `zeta2`. Podrobný návod, firmware a omezení emulace popisuje
 [ZETA2.md](ZETA2.md). Start RomWBW/CP/M zatím nebyl ověřen.
+
+## ZX Spectrum 48K s Pygame
+
+Další samostatný příklad v `src/zxspectrum` používá stejný procesor Z80.
+Obsahuje ROM/RAM, bitmapu a atributy původního Spectra, klávesovou matici,
+rámeček, periodické přerušení a beeper. Pygame je volitelná závislost:
+
+```sh
+python -m pip install -e ".[spectrum]"
+python -m zxspectrum --demo
+python -m zxspectrum --rom /cesta/48.rom
+python -m zxspectrum.benchmark --frames 80 --pygame
+```
+
+Sinclair ROM se nedistribuuje; vlastní ukázková ROM je přiložena jako Pythonový
+generátor. Podrobný návod, ovládání, omezení a naměřený výkon Pythonu popisuje
+[ZX_SPECTRUM.md](ZX_SPECTRUM.md). Jde o instrukční emulaci 48K, bez přesného
+časování ULA/contention; výkon reálného času není zaručen pro každou zátěž.
